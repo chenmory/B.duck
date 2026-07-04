@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>小黄鸭 AI 对话模拟器</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+      color: #27313d;
+      background: linear-gradient(180deg, #fff1ac 0%, #fff8e7 44%, #eaf8ff 100%);
+      display: flex;
+      justify-content: center;
+      padding: 24px;
+    }
+    .phone {
+      width: min(430px, 100%);
+      min-height: calc(100vh - 48px);
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(255, 201, 60, 0.32);
+      border-radius: 28px;
+      box-shadow: 0 22px 60px rgba(39, 49, 61, 0.14);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      padding: 22px 20px 16px;
+      background: rgba(255, 255, 255, 0.72);
+      border-bottom: 1px solid rgba(39, 49, 61, 0.07);
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .duck {
+      width: 58px;
+      height: 58px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-size: 30px;
+      background: linear-gradient(135deg, #ffe88a, #ffc93c);
+      box-shadow: 0 10px 24px rgba(255, 159, 69, 0.24);
+      border: 4px solid #fff;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.25;
+    }
+    .sub {
+      margin-top: 5px;
+      color: #75808d;
+      font-size: 13px;
+    }
+    main {
+      flex: 1;
+      padding: 18px 16px;
+      overflow-y: auto;
+    }
+    .msg {
+      display: flex;
+      margin: 12px 0;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .msg.child { justify-content: flex-end; }
+    .bubble {
+      max-width: 78%;
+      padding: 12px 14px;
+      border-radius: 18px;
+      line-height: 1.55;
+      font-size: 15px;
+      box-shadow: 0 8px 18px rgba(39, 49, 61, 0.08);
+    }
+    .duck-msg .bubble {
+      background: white;
+      border-bottom-left-radius: 6px;
+    }
+    .child .bubble {
+      background: #ffc93c;
+      border-bottom-right-radius: 6px;
+    }
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #fff;
+      font-size: 17px;
+      flex: 0 0 auto;
+    }
+    footer {
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.86);
+      border-top: 1px solid rgba(39, 49, 61, 0.07);
+      display: flex;
+      gap: 10px;
+    }
+    input {
+      flex: 1;
+      border: 1px solid rgba(255, 201, 60, 0.45);
+      border-radius: 18px;
+      padding: 13px 14px;
+      outline: none;
+      font-size: 15px;
+      background: #fff;
+    }
+    button {
+      border: 0;
+      border-radius: 18px;
+      padding: 0 18px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #27313d;
+      background: #ffc93c;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+    .hint {
+      text-align: center;
+      color: #75808d;
+      font-size: 12px;
+      padding: 6px 16px 0;
+    }
+  </style>
+</head>
+<body>
+  <section class="phone">
+    <header>
+      <div class="duck">🦆</div>
+      <div>
+        <h1>小黄鸭 AI 对话模拟器</h1>
+        <div class="sub">这里模拟孩子和玩具聊天，记录会同步到后端数据库。</div>
+      </div>
+    </header>
+    <main id="messages">
+      <div class="msg duck-msg">
+        <div class="avatar">🦆</div>
+        <div class="bubble">你好呀，我是小黄鸭。今天想聊恐龙、月亮，还是幼儿园里的小故事？</div>
+      </div>
+    </main>
+    <div class="hint">示例：月亮为什么会跟着我走？ / 有陌生人问我电话怎么办？</div>
+    <footer>
+      <input id="textInput" placeholder="孩子说点什么..." autocomplete="off" />
+      <button id="sendButton">发送</button>
+    </footer>
+  </section>
+
+  <script>
+    const apiBase = "/api/v1";
+    const messages = document.querySelector("#messages");
+    const input = document.querySelector("#textInput");
+    const button = document.querySelector("#sendButton");
+    let accessToken = "";
+    let childId = "";
+    let deviceId = "";
+
+    function appendMessage(role, text) {
+      const row = document.createElement("div");
+      row.className = role === "child" ? "msg child" : "msg duck-msg";
+      row.innerHTML = role === "child"
+        ? `<div class="bubble"></div><div class="avatar">👧</div>`
+        : `<div class="avatar">🦆</div><div class="bubble"></div>`;
+      row.querySelector(".bubble").textContent = text;
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function api(path, options = {}) {
+      const headers = {"Content-Type": "application/json"};
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+      const response = await fetch(`${apiBase}${path}`, {...options, headers});
+      const body = await response.json();
+      if (!response.ok || body.code !== 0) {
+        throw new Error(body.message || "请求失败");
+      }
+      return body.data;
+    }
+
+    async function bootstrap() {
+      const login = await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({account: "demo_parent", password: "123456"})
+      });
+      accessToken = login.accessToken;
+      const children = await api("/children");
+      childId = children[0]?.id;
+      const devices = await api(`/devices?childId=${encodeURIComponent(childId)}`);
+      deviceId = devices[0]?.id;
+    }
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      appendMessage("child", text);
+      button.disabled = true;
+      try {
+        const conversation = await api("/chat/messages", {
+          method: "POST",
+          body: JSON.stringify({childId, deviceId, text})
+        });
+        appendMessage("duck", conversation.duckReply);
+      } catch (error) {
+        appendMessage("duck", `刚刚有点走神：${error.message}`);
+      } finally {
+        button.disabled = false;
+        input.focus();
+      }
+    }
+
+    button.addEventListener("click", send);
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") send();
+    });
+
+    bootstrap().catch(error => appendMessage("duck", `初始化失败：${error.message}`));
+  </script>
+</body>
+</html>
